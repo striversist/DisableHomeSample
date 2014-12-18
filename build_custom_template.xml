@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project name="build_custom_template" default="">
+
+    <!-- 导入本地编译的参数build_local_path文件 -->
+    <import file="build_local_path_template.xml"/>
+
+    <!-- TODO : 这里要要配置local编译的签名参数（DB的证书参数不要改动，直接从DB服务器获取）-->
+    <condition property="key.store" value="${env.KEYSTORE_PATH}" else="AuroraKS.keystore">
+        <isset property="env.KEYSTORE_PATH"/>
+    </condition>
+    <condition property="key.alias" value="${env.ALIAS}" else="debugplatformkey">
+        <isset property="env.ALIAS"/>
+    </condition>
+    <condition property="key.store.password" value="${env.STOREPASS}" else="4zZx+MKRp9w3zp3PLxow3A==">
+        <isset property="env.STOREPASS"/>
+    </condition>
+    <condition property="key.alias.password" value="${env.KEYPASS}" else="e/nvMM196r7ZbOyKF0SQJg==">
+        <isset property="env.KEYPASS"/>
+    </condition>
+
+    <!-- TODO : 这里要要配置编译版本的QUA头信息，用于标示当前版本的QUA -->
+    <property name="publish.build.AppSnFlg" value="ADRLSPRI"/>
+    <property name="publish.build.AppSnVer" value="01"/>
+    <property name="publish.build.AppSnPublishType" value="A"/>
+    <property name="publish.build.AppLc" value="A1B2C3000D4E5F6"/>
+    <property name="publish.build.AppLcid" value="99"/>
+
+    <!-- TODO :设置proguard混淆描述文件（修改location的文件名） -->
+    <property name="proguard.config" location="proguard-project.txt"/>
+
+    <!-- TODO :设置每个项目的输出apk的first name, 例如相册是gallery; 联系人是contacts -->
+    <property name="output.file.build.first.name" value="test"/>
+
+    <!--
+    ********************************************************************************
+    ********************** 根据各个app的要求，自己修改的task ***********************
+    ********************************************************************************
+-->
+
+    <!-- .
+        在build前删除或者替换字符串或者资源文件，需要配置这个task。
+        如果无需替换任何资源，则无需配置，清空这个task中的内容即可。
+        (example：替换LC和代码里面的静态变量)
+    -->
+    <target name="-set-custom-pre-build">
+        <echo level="info" message="按照项目要求，更改编译前的输出参数 ..." encoding="UTF-8"/>
+
+        <!-- example: 如果是DB上编译，ant编译时就替换assets/build_config.ini配置文件中的信息(参数根据项目需要来修改) -->
+        <if condition="${env.all.params.available}">
+            <then>
+                <!-- build配置文件 -->
+                <property name="build.config.file" value="${asset.absolute.dir}/build_config.ini"/>
+                <replaceregexp file="${build.config.file}"
+                               match="BUILD_APP_SN_FLG\s*=.*"
+                               replace="BUILD_APP_SN_FLG=${publish.build.AppSnFlg}"
+                               byline="true" encoding="utf-8"/>
+                <replaceregexp file="${build.config.file}"
+                               match="BUILD_APP_SN_VER\s*=.*"
+                               replace="BUILD_APP_SN_VER=${publish.build.AppSnVer}"
+                               byline="true" encoding="utf-8"/>
+                <replaceregexp file="${build.config.file}"
+                               match="BUILD_APP_SN_PUBLISH_TYPE\s*=.*"
+                               replace="BUILD_APP_SN_PUBLISH_TYPE=${publish.build.AppSnPublishType}"
+                               byline="true" encoding="utf-8"/>
+                <replaceregexp file="${build.config.file}"
+                               match="LC\s*=.*"
+                               replace="LC=${publish.build.AppLc}"
+                               byline="true" encoding="utf-8"/>
+                <replaceregexp file="${build.config.file}"
+                               match="LCID\s*=.*"
+                               replace="LCID=${publish.build.AppLcid}"
+                               byline="true" encoding="utf-8"/>
+            </then>
+        </if>
+    </target>
+
+
+    <!--
+         在project中有引用第三方jar，需要配置这个task。
+         引用的第三方jar文件，也分为“依赖包”和“扩展的编译环境”两大类，这需要分开配置。
+
+         custom.intermediate.jars.path: 是指所用到的“扩展的编译环境”的隐藏api的jars的path集合
+         custom.dex.injars.path: 是指需要打包到dex中的所有jars的path集合
+         custom.dex.libraryjars.path: 是指只会参加编译、混淆，但是不会打包到dex中的所有jars的path集合
+
+         （注：对于基础控件framework-qrom.jar和隐藏api的jar，因为和rom以及UI资源是强相关的，更新不及时就可能运行时crash
+               对比于qrom_component_log.jar这种公共jar, 基础控件framework-qrom.jar需要和rom完全匹配 ）
+               因此对于基础控件framework-qrom.jar和隐藏api的jar，最好不存放在libs文件夹下。
+               但无论在本地开发，还是在DB服务器上，都存在于单独的路径，需要独立更新。
+               所以这种情况下，就需要为它配置第三方jar的路径，让build脚本能够把它引用进来）
+               在集成模式中，framework-qrom.jar需要打进dex中，所以配置到custom.dex.injars.path中
+               在非集成模式中，framework-qrom.jar不要打进dex中，所以配置到custom.dex.libraryjars.path中
+     -->
+	<condition property="qrom.intermediates.sdk.framework" value="${env.QROM_SDK_BASE_PATH}/qrom_intermediates_sdk/framework.jar"
+			   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/framework.jar">
+	    <and>
+		    <os family="unix"/>
+			<isset property="env.QROM_SDK_BASE_PATH"/>
+		</and>
+	</condition>
+	<condition property="qrom.intermediates.sdk.framework2" value="${env.QROM_SDK_BASE_PATH}/qrom_intermediates_sdk/framework2.jar"
+			   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/framework2.jar">
+		<and>
+		    <os family="unix"/>
+			<isset property="env.QROM_SDK_BASE_PATH"/>
+		</and>
+	</condition>
+	<condition property="qrom.intermediates.sdk.core" value="${env.QROM_SDK_BASE_PATH}/qrom_intermediates_sdk/core.jar"
+			   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/core.jar">
+		<and>
+		    <os family="unix"/>
+			<isset property="env.QROM_SDK_BASE_PATH"/>
+		</and>
+	</condition>
+	<condition property="qrom.intermediates.sdk.telephony-classes" value="${env.QROM_SDK_BASE_PATH}/qrom_intermediates_sdk/telephony-classes-full-debug.jar"
+			   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/telephony-classes-full-debug.jar">
+		<and>
+		    <os family="unix"/>
+			<isset property="env.QROM_SDK_BASE_PATH"/>
+		</and>
+	</condition>
+	<condition property="qrom.intermediates.sdk.framework-base" value="${env.QROM_SDK_BASE_PATH}/qrom_intermediates_sdk/framework-base.jar"
+			   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/framework-base.jar">
+		<and>
+		    <os family="unix"/>
+			<isset property="env.QROM_SDK_BASE_PATH"/>
+		</and>
+	</condition>
+	 
+	 
+    <target name="-set-compile-libs">
+        <echo >设置项目中引用的隐藏api的libs路径(这些属于编译时用到的特殊jar) ...</echo>
+        <path id="custom.intermediate.jars.path">
+		     <pathelement location="${qrom.intermediates.sdk.framework}"/>
+			 <pathelement location="${qrom.intermediates.sdk.framework2}"/>
+			 <pathelement location="${qrom.intermediates.sdk.core}"/>
+			 <pathelement location="${qrom.intermediates.sdk.telephony-classes}"/>
+		     <pathelement location="${qrom.intermediates.sdk.framework-base}"/>
+        </path>
+
+        <echo>设置项目中引用的第三方libs路径 ...</echo>
+        <if condition="${build.release.mode.internal}">
+            <!--
+                example：internal模式
+                    1) libs文件夹下所有的jar打包进dex —— injars.path
+                    2) framework-qrom.jar不打包进dex —— libraryjars.path
+            -->
+            <then>
+                <path id="custom.dex.injars.path">
+                    <fileset dir="libs">
+                        <include name="*.jar"/>
+                    </fileset>
+                </path>
+                <path id="custom.dex.libraryjars.path">
+                    <pathelement location="${qrom.widget.sdk.file}"/>
+                </path>
+            </then>
+            <!--
+                example：非internal模式
+                    1) libs文件夹下所有的jar打包进dex —— injars.path
+                    2) framework-qrom.jar也打包进dex —— injars.path
+            -->
+            <else>
+                <path id="custom.dex.injars.path">
+                    <fileset dir="libs">
+                        <include name="*.jar"/>
+                    </fileset>
+                    <pathelement location="${qrom.widget.sdk.file}"/>
+                </path>
+                <path id="custom.dex.libraryjars.path">
+                </path>
+            </else>
+        </if>
+    </target>
+
+
+
+    <!--********************************************* example: <target name="-set-compile-libs"> *************************************************
+
+       # 下面这个是另外一个的实现“-set-compile-libs”的例子，我们用filemanager这个project来举例说明如何配置
+        # 注： filemanager在libs文件夹下面也放了控件的framework-qrom.jar，但是DB脚本编译的时候，不会使用framework-qrom.jar
+               而使用sdk库下面的framework-qrom.jar文件，所以会把framework-qrom.jar从libs引用排除
+
+        <target name="-set-compile-libs">
+            <echo >设置项目中引用的隐藏api的libs路径(这些属于编译时用到的特殊jar) ...</echo>
+            <path id="custom.intermediate.jars.path">
+            </path>
+
+            <echo>设置项目中引用的第三方libs路径 ...</echo>
+            <if condition="${build.release.mode.internal}">
+                <then>
+                    <path id="custom.dex.injars.path">
+                        <fileset dir="libs">
+                            <include name="*.jar"/>
+                            <exclude name="framework-qrom.jar"/>
+                        </fileset>
+                    </path>
+                    <path id="custom.dex.libraryjars.path">
+                        <pathelement location="${qrom.widget.sdk.file}"/>
+                    </path>
+                </then>
+                <else>
+                    <path id="custom.dex.injars.path">
+                        <fileset dir="libs">
+                            <include name="*.jar"/>
+                            <exclude name="framework-qrom.jar"/>
+                        </fileset>
+                        <pathelement location="${qrom.widget.sdk.file}"/>
+                    </path>
+                    <path id="custom.dex.libraryjars.path">
+                    </path>
+                </else>
+            </if>
+        </target>
+    -->
+
+
+
+    <!--********************************************* example: <target name="-set-compile-libs"> *************************************************
+
+        # 下面这个是另外一个的实现“-set-compile-libs”的例子，我们用contacts这个project来举例说明如何配置
+        # 注：1. contacts和普通应用相似点：都是引用libs下的jar包，和控件jar包
+              2. contacts和普通应用差异点：需要引用额外的隐藏api的jar包
+              3. contacts在开发的时候，使用了libs隐藏api下的jar包，但是可能和服务器上sdk库中的jar版本不一致
+                 所以在DB脚本编译的时候，不指定使用libs下面的jar，而使用sdk库下面的jar文件
+
+        <condition property="qrom.intermediates.sdk.android-common" value="${env.QROM_SDK_BASE_PATH}/QromWidgetTools/framework-qrom.jar"
+               else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/android-common-classes-full-debug.jar">
+            <and>
+                <os family="unix"/>
+                <isset property="env.QROM_SDK_BASE_PATH"/>
+            </and>
+        </condition>
+        <condition property="qrom.intermediates.sdk.contacts-classes" value="${env.QROM_SDK_BASE_PATH}/QromWidgetTools/framework-qrom.jar"
+                   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/contacts-classes-full-debug.jar">
+            <and>
+                <os family="unix"/>
+                <isset property="env.QROM_SDK_BASE_PATH"/>
+            </and>
+        </condition>
+        <condition property="qrom.intermediates.sdk.guava" value="${env.QROM_SDK_BASE_PATH}/QromWidgetTools/framework-qrom.jar"
+                   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/guava.jar">
+            <and>
+                <os family="unix"/>
+                <isset property="env.QROM_SDK_BASE_PATH"/>
+            </and>
+        </condition>
+        <condition property="qrom.intermediates.sdk.phone-common" value="${env.QROM_SDK_BASE_PATH}/QromWidgetTools/framework-qrom.jar"
+                   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/phone-common-classes-full-debug.jar">
+            <and>
+                <os family="unix"/>
+                <isset property="env.QROM_SDK_BASE_PATH"/>
+            </and>
+        </condition>
+        <condition property="qrom.intermediates.sdk.telephony-classes" value="${env.QROM_SDK_BASE_PATH}/qrom_intermediates_sdk/telephony-classes-full-debug.jar"
+                   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/telephony-classes-full-debug.jar">
+            <and>
+                <os family="unix"/>
+                <isset property="env.QROM_SDK_BASE_PATH"/>
+            </and>
+        </condition>
+        <condition property="qrom.intermediates.sdk.framework-base" value="${env.QROM_SDK_BASE_PATH}/qrom_intermediates_sdk/framework-base.jar"
+                   else="${qrom.sdk.git.local.dir}/qrom_intermediates_sdk/framework-base.jar">
+            <and>
+                <os family="unix"/>
+                <isset property="env.QROM_SDK_BASE_PATH"/>
+            </and>
+        </condition>
+
+        <target name="-set-compile-libs">
+            <echo >设置项目中引用的隐藏api的libs路径(这些属于编译时用到的特殊jar) ...</echo>
+            <path id="custom.intermediate.jars.path">
+                <pathelement location="${qrom.intermediates.sdk.android-common}"/>
+                <pathelement location="${qrom.intermediates.sdk.contacts-classes}"/>
+                <pathelement location="${qrom.intermediates.sdk.guava}"/>
+                <pathelement location="${qrom.intermediates.sdk.phone-common}"/>
+                <pathelement location="${qrom.intermediates.sdk.telephony-classes}"/>
+                <pathelement location="${qrom.intermediates.sdk.framework-base}"/>
+            </path>
+
+            <echo>设置项目中引用的第三方libs路径 ...</echo>
+            <if condition="${build.release.mode.internal}">
+                <then>
+                    <path id="custom.dex.injars.path">
+                        <pathelement location="libs/android-support-v13.jar"/>
+                        <pathelement location="libs/pinyin4j-2.5.0.jar"/>
+                        <pathelement location="libs/contacts-security-sdk.jar"/>
+                    </path>
+                    <path id="custom.dex.libraryjars.path">
+                        <pathelement location="${qrom.widget.sdk.file}"/>
+                    </path>
+                </then>
+                <else>
+                    <path id="custom.dex.injars.path">
+                        <pathelement location="libs/android-support-v13.jar"/>
+                        <pathelement location="libs/pinyin4j-2.5.0.jar"/>
+                        <pathelement location="libs/contacts-security-sdk.jar"/>
+                        <pathelement location="${qrom.widget.sdk.file}"/>
+                    </path>
+                    <path id="custom.dex.libraryjars.path">
+                    </path>
+                </else>
+            </if>
+        </target>
+
+     -->
+
+</project>

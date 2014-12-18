@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project name="build_common_template" basedir=".">
+
+    <!--
+        ********************************************************************************
+        ******************************** 设置编译参数 **********************************
+        ********************************************************************************
+    -->
+    <scriptdef name="parseInt" language="javascript">
+        <attribute name="input" />
+        <attribute name="property" />
+        <![CDATA[
+            var number = attributes.get("input");
+            project.setProperty(attributes.get("property"), parseInt(number, 10));
+        ]]>
+    </scriptdef>
+
+    <scriptdef name="property_replace" language="javascript">
+        <attribute name="from" />
+        <attribute name="to" />
+        <attribute name="property" />
+        <attribute name="value" />
+        <![CDATA[
+            var from = attributes.get("from");
+            var to = attributes.get("to");
+            var stringObj = attributes.get("value");
+            project.setProperty(attributes.get("property"), stringObj.replace(from, to));
+        ]]>
+    </scriptdef>
+
+    <tstamp>
+        <format property="output.file.build.date" pattern="yyMMdd"/>
+    </tstamp>
+
+    <!-- 系统属性，请不要擅自修改 -->
+    <property environment="env"/>
+
+    <!-- 导入app的自定义task文件 -->
+    <import file="build_custom_template.xml"/>
+
+    <!-- 不同版本的控件，在不同的文件夹中管理，设置当前版本的控件文件夹 -->
+    <property name="qrom.widget.sdk.version" value="qrom_widget0.2_sdk"/>
+
+    <!-- 预置android sdk中自带的默认build文件中所需的参数 -->
+    <condition property="sdk.dir" value="${env.ANDROID_SDK_19_223_19_19}" else="${sdk.local.dir}">
+        <!-- 是否服务器构建（一般本地编译为window环境，DB编译为linux环境） -->
+        <and>
+            <os family="unix"/>
+            <isset property="env.ANDROID_SDK_19_223_19_19"/>
+        </and>
+    </condition>
+    <condition property="qrom.widget.sdk.file" value="${env.QROM_SDK_BASE_PATH}/${qrom.widget.sdk.version}/QromWidgetTools/framework-qrom.jar"
+               else="${qrom.sdk.git.local.dir}/${qrom.widget.sdk.version}/QromWidgetTools/framework-qrom.jar">
+        <and>
+            <os family="unix"/>
+            <isset property="env.QROM_SDK_BASE_PATH"/>
+        </and>
+    </condition>
+    <condition property="qrom.widget.res.dir" value="${env.QROM_SDK_BASE_PATH}/${qrom.widget.sdk.version}/QromWidgetTools/qrom-res"
+               else="${qrom.sdk.git.local.dir}/${qrom.widget.sdk.version}/QromWidgetTools/qrom-res">
+        <and>
+            <os family="unix"/>
+            <isset property="env.QROM_SDK_BASE_PATH"/>
+        </and>
+    </condition>
+    <condition property="qrom.widget.property.file" value="${env.QROM_SDK_BASE_PATH}/${qrom.widget.sdk.version}/QromWidgetTools/qrom.properties"
+               else="${qrom.sdk.git.local.dir}/${qrom.widget.sdk.version}/QromWidgetTools/qrom.properties">
+        <and>
+            <os family="unix"/>
+            <isset property="env.QROM_SDK_BASE_PATH"/>
+        </and>
+    </condition>
+
+    <condition property="env.all.params.available" value="true" else="false">
+        <and>
+            <isset property="env.MajorVersion"/>
+            <isset property="env.MinorVersion"/>
+            <isset property="env.FixVersion"/>
+            <isset property="env.BuildNo"/>
+            <isset property="env.PLATFORM"/>
+        </and>
+    </condition>
+    <condition
+            property="output.file.build.basename"
+            value="${output.file.build.first.name}_${env.MajorVersion}.${env.MinorVersion}.${env.FixVersion}.${env.BuildNo}"
+            else="${output.file.build.first.name}_${env.COMPUTERNAME}_${output.file.build.date}">
+        <istrue value="${env.all.params.available}"/>
+    </condition>
+    <parseInt property="version.code" input="${env.MajorVersion}${env.MinorVersion}${env.FixVersion}" />
+    <property name="version.name" value="${env.MajorVersion}.${env.MinorVersion}.${env.FixVersion}.${env.BuildNo}" />
+
+    <!-- 导入android sdk中自带的默认build文件 -->
+    <import file="${sdk.dir}/tools/ant/build.xml"/>
+
+    <!-- 导入工程描述文件 -->
+    <property file="project.properties"/>
+
+    <!--
+        按照规范，指定输出的文件名
+        (如果是非DB环境编译，会记录COMPUTERNAME，方便回溯版本)
+    -->
+
+
+    <path id="original.target.class.path"/>
+    <path id="original.all.jars.path"/>
+    <path id="custom.dex.injars.path"/>
+    <path id="custom.dex.libraryjars.path"/>
+    <path id="custom.intermediate.jars.path"/>
+
+    <!--
+        ********************************************************************************
+        ************************* build脚本的base模本（start） *************************
+        ***************************** (通用方法，谨慎修改) *****************************
+        ********************************************************************************
+    -->
+
+    <target name="build_release_implement" depends="-set-internal-mode">
+        <property name="build.release.mode" value="true"/>
+        <echo>build.release.mode = ${build.release.mode}</echo>
+        <echo>build.release.mode.internal = ${build.release.mode.internal}</echo>
+
+        <replaceregexp file="AndroidManifest.xml"
+                       match="android:debuggable\s*=\s*&quot;([^&quot;]*)&quot;"
+                       replace="android:debuggable=&quot;false&quot;" byline="false" encoding="utf-8"/>
+        <replaceregexp byline="false" encoding="utf-8" file="src/qrom/component/config/QRomLogConfig.java"
+                       match="LOG_(CONSOLE|FILE|BOTH)" replace="LOG_NONE"/>
+
+        <antcall target="release"/>
+    </target>
+
+    <target name="build_debug_implement" depends="-set-internal-mode">
+        <property name="build.release.mode" value="false"/>
+        <echo>build.release.mode = ${build.release.mode}</echo>
+        <echo>build.release.mode.internal = ${build.release.mode.internal}</echo>
+
+        <replaceregexp file="AndroidManifest.xml"
+                       match="android:debuggable\s*=\s*&quot;([^&quot;]*)&quot;"
+                       replace="android:debuggable=&quot;true&quot;" byline="false" encoding="utf-8"/>
+
+        <antcall target="debug"/>
+    </target>
+
+    <target name="-set-internal-mode">
+        <condition property="build.release.mode.internal" value="true" else="false">
+            <istrue value="${build_internal}"/>
+        </condition>
+    </target>
+
+    <target name="-pre-build">
+        <!-- 动态设置qrom.properties的参数 -->
+        <copy file="${qrom.widget.property.file}" tofile="qrom.properties" overwrite="true"/>
+        <replaceregexp file="qrom.properties" match="qrom_lib_path\s*=.*" encoding="utf-8"
+                       replace="qrom_lib_path = ${qrom.widget.res.dir}" byline="true"/>
+        <if condition="${build.release.mode.internal}">
+            <then>
+                <replaceregexp file="qrom.properties" match="include_qrom_res\s*=.*" encoding="utf-8"
+                               replace="include_qrom_res = 0" byline="true"/>
+            </then>
+            <else>
+                <replaceregexp file="qrom.properties" match="include_qrom_res\s*=.*" encoding="utf-8"
+                               replace="include_qrom_res = 1" byline="true"/>
+            </else>
+        </if>
+
+        <!-- 如果是app的内置模式，要先单独把so打包出来 -->
+        <if condition="${build.release.mode.internal}">
+            <then>
+                <zip destfile="${out.absolute.dir}/${output.file.build.basename}_so.zip" update="true">
+                    <fileset dir="${jar.libs.dir}">
+                        <include name="**/*.so"/>
+                    </fileset>
+                </zip>
+                <delete includeemptydirs="true" dir="${jar.libs.dir}" excludes="**/*.jar"/>
+            </then>
+        </if>
+
+        <antcall target="-set-custom-pre-build" inheritAll="true" inheritRefs="true"/>
+        <antcall target="-set-standard-pre-build" inheritAll="true" inheritRefs="true"/>
+    </target>
+
+    <target name="-set-standard-pre-build">
+        <!--******************** base模板不修改（start） ********************-->
+
+        <!-- 如果是DB上编译，配置了env的环境变量，ant编译时就按照标准修改versionName和versionCode -->
+        <if condition="${env.all.params.available}">
+            <then>
+                <replaceregexp file="AndroidManifest.xml"
+                               match="android:versionCode\s*=\s*&quot;([^&quot;]*)&quot;"
+                               replace="android:versionCode = &quot;${version.code}&quot;"
+                               byline="false" encoding="utf-8"/>
+                <replaceregexp file="AndroidManifest.xml"
+                               match="android:versionName\s*=\s*&quot;(.*)&quot;"
+                               replace="android:versionName = &quot;${version.name}&quot;"
+                               byline="false" encoding="utf-8"/>
+
+                <replaceregexp file="${asset.absolute.dir}/build_config.ini"
+                               match="BUILD_APP_VN_DAY\s*=.*"
+                               replace="BUILD_APP_VN_DAY=${env.FixVersion}"
+                               byline="true" encoding="utf-8"/>
+                <replaceregexp file="${asset.absolute.dir}/build_config.ini"
+                               match="BUILD_APP_BN_BUILD_NO\s*=.*"
+                               replace="BUILD_APP_BN_BUILD_NO=${env.BuildNo}"
+                               byline="true" encoding="utf-8"/>
+            </then>
+        </if>
+
+        <!--******************** base模板不修改（start） ********************-->
+    </target>
+
+    <target name="-pre-compile" depends="-set-original-path,-set-compile-libs">
+        <!--******************** base模板不修改（start） ********************-->
+
+        <property name="local.widget.sdk.file" location="libs/framework-qrom.jar"/>
+        <if condition="${build.release.mode.internal}">
+            <then>
+                <path_replace refid="custom.dex.injars.path" from="${local.widget.sdk.file}" to=""/>
+            </then>
+            <else>
+                <path_replace refid="custom.dex.injars.path" from="${local.widget.sdk.file}" to="${qrom.widget.sdk.file}"/>
+            </else>
+        </if>
+        <path_replace refid="custom.dex.libraryjars.path" from="${local.widget.sdk.file}" to="${qrom.widget.sdk.file}"/>
+
+        <path id="project.all.jars.path">
+            <path path="${toString:custom.dex.injars.path}"/>
+        </path>
+        <path id="project.target.class.path">
+            <path path="${toString:custom.intermediate.jars.path}"/>
+            <path refid="custom.dex.libraryjars.path"/>
+            <path path="${toString:original.target.class.path}"/>
+        </path>
+        <!--******************** base模板不修改（end） ********************-->
+    </target>
+
+    <target name="-set-original-path">
+        <path id="original.target.class.path">
+            <path path="${toString:project.target.class.path}"/>
+        </path>
+        <path id="original.all.jars.path">
+            <path path="${toString:project.all.jars.path}"/>
+        </path>
+    </target>
+
+    <!--
+      *  implement task name="-post-compile"
+         (在这个task任务的依赖中，可以配置obfuscate的应用jar)
+      -->
+    <target name="-post-compile">
+        <!-- 如果没有引用framework-qrom.jar，说明不需要framework-qrom的资源-->
+        <condition property="is.widget.sdk.exclude" value="false" else="true">
+            <or>
+                <contains string="${toString:custom.dex.injars.path}" substring="framework-qrom.jar"/>
+                <contains string="${toString:custom.dex.libraryjars.path}" substring="framework-qrom.jar"/>
+            </or>
+        </condition>
+
+        <if>
+            <condition>
+                <or>
+                    <istrue value="${build.release.mode.internal}"/>
+                    <istrue value="${is.widget.sdk.exclude}"/>
+                </or>
+            </condition>
+            <then>
+                <delete includeemptydirs="true" dir="${out.classes.absolute.dir}"
+                        includes="**/com/tencent/qrom/R*.class"/>
+                <replaceregexp file="qrom.properties" match="include_qrom_res\s*=.*" encoding="utf-8"
+                               replace="include_qrom_res = 0" byline="true"/>
+            </then>
+        </if>
+    </target>
+
+    <target name="-post-build">
+        <!--******************** base模板不修改（start） ********************-->
+        <echo>按照命名规范，对输出的apk进行重命名 ...</echo>
+        <condition property="out.final.build.release.mode" value="_internal" else="">
+            <istrue value="${build.release.mode.internal}"/>
+        </condition>
+        <if condition="${proguard.enabled}">
+            <then>
+                <move file="${out.final.file}"
+                      tofile="${out.absolute.dir}/${output.file.build.basename}_release${out.final.build.release.mode}.apk"/>
+                <move file="${obfuscate.absolute.dir}/mapping.txt"
+                      tofile="${out.absolute.dir}/${output.file.build.basename}_mapping${out.final.build.release.mode}.txt"/>
+            </then>
+            <else>
+                <!--需要对debug的重新签名-->
+                <signapk
+                        input="${out.final.file}"
+                        output="${out.absolute.dir}/unaligned_${output.file.build.basename}_debug${out.final.build.release.mode}.apk"
+                        keystore="${key.store}"
+                        storepass="${key.store.password}"
+                        alias="${key.alias}"
+                        keypass="${key.alias.password}"/>
+
+                <zipalign-helper
+                        in.package="${out.absolute.dir}/unaligned_${output.file.build.basename}_debug${out.final.build.release.mode}.apk"
+                        out.package="${out.absolute.dir}/${output.file.build.basename}_debug${out.final.build.release.mode}.apk" />
+            </else>
+        </if>
+
+
+
+        <echo>删除多余的文件 ...</echo>
+        <delete includeemptydirs="true" dir="${out.absolute.dir}"
+                excludes="**/${output.file.build.basename}*/** ${output.file.build.basename}*"/>
+        <!--******************** base模板不修改（end） ********************-->
+    </target>
+
+
+    <macrodef name="path_replace">
+        <attribute name="refid"/>
+        <attribute name="from" default=""/>
+        <attribute name="to" default=""/>
+        <sequential>
+            <path id="path_input" refid="@{refid}"/>
+            <property name="path_string" value=""/>
+            <property_replace property="path_string" value="${toString:path_input}" from="@{from}" to="@{to}"/>
+            <path id="@{refid}">
+                <path path="${path_string}"/>
+            </path>
+        </sequential>
+    </macrodef>
+
+
+    <!--
+        ********************************************************************************
+        ************************** build脚本的base模本（end） **************************
+        ***************************** (通用方法，谨慎修改) *****************************
+        ********************************************************************************
+    -->
+
+
+</project>
